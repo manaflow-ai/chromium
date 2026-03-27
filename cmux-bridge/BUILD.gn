@@ -1,0 +1,20 @@
+import("//build/config/features.gni")
+
+shared_library("cmux_chromium_bridge") {
+  testonly = true
+  sources = [ "cmux_bridge.mm" ]
+  deps = [
+    "//base",
+    "//content/public/app",
+    "//content/public/browser",
+    "//content/public/common",
+    "//content/shell:content_shell_lib",
+    "//ui/gfx",
+    "//url",
+  ]
+  frameworks = [
+    "AppKit.framework",
+    "Foundation.framework",
+    "QuartzCore.framework",
+  ]
+}

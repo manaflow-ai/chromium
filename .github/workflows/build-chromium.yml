@@ -1,0 +1,70 @@
+name: Build Chromium Content Shell
+
+on:
+  workflow_dispatch:
+    inputs:
+      chromium_version:
+        description: 'Chromium version tag (e.g. 130.0.6723.117)'
+        required: false
+        default: 'main'
+
+env:
+  DEPOT_TOOLS_UPDATE: 0
+
+jobs:
+  build:
+    runs-on: warp-macos-15-arm64-6x
+    timeout-minutes: 120
+    steps:
+      - name: Install depot_tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $HOME/depot_tools
+          echo "$HOME/depot_tools" >> $GITHUB_PATH
+
+      - name: Fetch Chromium source
+        run: |
+          mkdir -p ~/chromium && cd ~/chromium
+          fetch --no-history chromium
+
+      - name: Configure build
+        run: |
+          cd ~/chromium/src
+          gn gen out/Release --args='
+            target_cpu = "arm64"
+            is_debug = false
+            is_component_build = false
+            symbol_level = 0
+            enable_nacl = false
+            use_remoteexec = false
+          '
+
+      - name: Build content_shell
+        run: |
+          cd ~/chromium/src
+          autoninja -C out/Release content_shell
+
+      - name: Package framework
+        run: |
+          cd ~/chromium/src/out/Release
+          # Create a tar of the content shell app and helper apps
+          tar -czf /tmp/chromium-content-shell-arm64.tar.gz \
+            "Content Shell.app" \
+            "Content Shell Helper.app" \
+            "Content Shell Helper (GPU).app" \
+            "Content Shell Helper (Renderer).app"
+          ls -lh /tmp/chromium-content-shell-arm64.tar.gz
+
+      - name: Get Chromium version
+        id: version
+        run: |
+          cd ~/chromium/src
+          VERSION=$(git log -1 --format='%H' | head -c 12)
+          echo "sha=$VERSION" >> $GITHUB_OUTPUT
+          echo "Chromium SHA: $VERSION"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-content-shell-arm64-${{ steps.version.outputs.sha }}
+          path: /tmp/chromium-content-shell-arm64.tar.gz
+          retention-days: 90
