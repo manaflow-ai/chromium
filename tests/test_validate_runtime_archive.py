@@ -52,6 +52,7 @@ def _write_archive(
     root_type: bytes = tarfile.DIRTYPE,
     executable_mode: int = 0o755,
     omit_executable: str | None = None,
+    executable_body: bytes = b"executable",
 ) -> None:
     with tarfile.open(path, "w:gz") as archive:
         root = tarfile.TarInfo(f"{PACKAGE_NAME}/")
@@ -71,7 +72,7 @@ def _write_archive(
         for name in REQUIRED_EXECUTABLES:
             if name == omit_executable:
                 continue
-            body = b"executable"
+            body = executable_body
             item = tarfile.TarInfo(f"{PACKAGE_NAME}/{name}")
             item.mode = executable_mode
             item.size = len(body)
@@ -225,6 +226,43 @@ class RuntimeArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime.tar.gz"
             _write_archive(path, executable_mode=0o644)
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_empty_runtime_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(path, executable_body=b"")
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_symlink_runtime_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            executable = REQUIRED_EXECUTABLES[0]
+            _write_archive(
+                path,
+                omit_executable=executable,
+                link=(f"{PACKAGE_NAME}/{executable}", "not-a-file"),
+            )
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_duplicate_manifest_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            manifest = json.dumps(_manifest(), separators=(",", ":"))
+            duplicate = manifest.replace(
+                '"chromiumSourceRepo":"',
+                '"chromiumSourceRepo":"',
+                1,
+            )
+            duplicate = duplicate.replace(
+                '"artifactRepo":',
+                f'"chromiumSourceRepo":"{SOURCE_REPOSITORY}","artifactRepo":',
+                1,
+            )
+            _write_archive(path, manifest_body=duplicate.encode())
             with self.assertRaises(validator.ArchiveError):
                 self._validate(path)
 

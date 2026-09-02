@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +87,22 @@ class ChromiumReleasePolicyTests(unittest.TestCase):
             path.write_text(duplicate, encoding="utf-8")
             with self.assertRaises(policy.PolicyError):
                 policy.load_policy(path)
+
+    def test_cli_requires_explicit_release_identity(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result = policy.main(
+                [
+                    "--policy",
+                    str(POLICY_PATH),
+                    "--runner-json",
+                    RUNNER_JSON,
+                    "--runner-name",
+                    RUNNER_NAME,
+                ]
+            )
+        self.assertEqual(result, 2)
+        self.assertIn("source_repository", stderr.getvalue())
 
     def _validate(self, **overrides: str) -> None:
         values = {
