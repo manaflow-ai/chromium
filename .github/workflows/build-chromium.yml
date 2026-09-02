@@ -134,7 +134,8 @@ jobs:
         run: |
           set -euo pipefail
           depot_tools="$BUILD_ROOT/depot_tools"
-          git clone --no-checkout "$DEPOT_TOOLS_REPOSITORY" "$depot_tools"
+          git init -q "$depot_tools"
+          git -C "$depot_tools" remote add origin "$DEPOT_TOOLS_REPOSITORY"
           git -C "$depot_tools" fetch --depth=1 origin "$DEPOT_TOOLS_COMMIT"
           git -C "$depot_tools" checkout --detach "$DEPOT_TOOLS_COMMIT"
           [[ "$(git -C "$depot_tools" rev-parse HEAD)" == "$DEPOT_TOOLS_COMMIT" ]]

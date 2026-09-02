@@ -72,6 +72,20 @@ class ChromiumReleasePolicyTests(unittest.TestCase):
             with self.assertRaises(policy.PolicyError):
                 policy.load_policy(path)
 
+    def test_rejects_duplicate_policy_keys(self) -> None:
+        text = POLICY_PATH.read_text(encoding="utf-8")
+        duplicate = text.replace(
+            '"source_repository": "https://github.com/manaflow-ai/chromium-src.git",',
+            '"source_repository": "https://github.com/manaflow-ai/chromium-src.git",\n'
+            '  "source_repository": "https://github.com/manaflow-ai/chromium-src.git",',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy.json"
+            path.write_text(duplicate, encoding="utf-8")
+            with self.assertRaises(policy.PolicyError):
+                policy.load_policy(path)
+
     def _validate(self, **overrides: str) -> None:
         values = {
             "source_repository": SOURCE_REPOSITORY,

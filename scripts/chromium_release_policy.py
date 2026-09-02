@@ -27,6 +27,15 @@ class PolicyError(ValueError):
     """Raised when the checked-in release policy is malformed or unsafe."""
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for key, value in pairs:
+        if key in values:
+            raise PolicyError(f"policy contains duplicate key: {key}")
+        values[key] = value
+    return values
+
+
 def _require_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise PolicyError(f"{field} must be a non-empty string")
@@ -37,8 +46,12 @@ def _require_string(value: object, field: str) -> str:
 
 def load_policy(path: Path) -> dict[str, object]:
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        raw = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+    except PolicyError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise PolicyError(f"cannot read policy: {error}") from error
     if not isinstance(raw, dict):
         raise PolicyError("policy must be a JSON object")
