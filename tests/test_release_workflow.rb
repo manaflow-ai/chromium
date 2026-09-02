@@ -33,4 +33,7 @@ abort "publish checkout step is missing" unless publish_checkout
 abort "publish checkout must use the immutable dispatch SHA" unless
   publish_checkout.fetch("with").fetch("ref") == "${{ github.sha }}"
 
+abort "publish must use the protected chromium-release environment" unless
+  jobs.fetch("publish").fetch("environment").fetch("name") == "chromium-release"
+
 puts "release workflow queue and immutable-ref policy passed"
