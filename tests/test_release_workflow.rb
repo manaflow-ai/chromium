@@ -5,6 +5,10 @@ require "yaml"
 
 workflow_path = File.expand_path("../.github/workflows/build-chromium.yml", __dir__)
 workflow = YAML.load_file(workflow_path)
+validation_workflow_path = File.expand_path(
+  "../.github/workflows/validate-release-workflow.yml", __dir__
+)
+validation_workflow = YAML.load_file(validation_workflow_path)
 
 trigger = workflow.fetch(true)
 dispatch = trigger.fetch("workflow_dispatch")
@@ -55,7 +59,10 @@ abort "publish checkout must use the immutable dispatch SHA" unless
 abort "publish must use the protected chromium-release environment" unless
   jobs.fetch("publish").fetch("environment").fetch("name") == "chromium-release"
 
-validation_steps = jobs.fetch("tests").fetch("steps").map { |step| step.fetch("run", "") }.join("\n")
+validation_jobs = validation_workflow.fetch("jobs")
+validation_steps = validation_jobs.fetch("tests").fetch("steps").map do |step|
+  step.fetch("run", "")
+end.join("\n")
 %w[ruff pyright zizmor].each do |tool|
   abort "validation workflow must run #{tool}" unless validation_steps.include?(tool)
 end

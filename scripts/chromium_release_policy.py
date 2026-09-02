@@ -27,6 +27,12 @@ class PolicyError(ValueError):
     """Raised when the checked-in release policy is malformed or unsafe."""
 
 
+def _require_cli_value(value: str | None, name: str) -> str:
+    if value is None:
+        raise PolicyError(f"workflow invocation must provide: {name}")
+    return value
+
+
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
     values: dict[str, object] = {}
     for key, value in pairs:
@@ -211,18 +217,14 @@ def main(argv: list[str] | None = None) -> int:
             raise PolicyError(
                 "workflow invocation must select exactly one approved source commit"
             )
-        source_repository = args.source_repository or str(policy["source_repository"])
-        source_ref = args.source_ref or str(policy["source_ref"])
-        source_commit = args.source_commit or str(approved_commits[0])
-        runner_json = args.runner_json or json.dumps(
-            policy["runner_labels"], separators=(",", ":")
+        source_repository = _require_cli_value(
+            args.source_repository, "source_repository"
         )
-        runner_name = args.runner_name or ""
-        if not runner_name:
-            raise PolicyError("runner name is required")
-        release_tag = (
-            args.release_tag or f"{policy['release_tag_prefix']}{source_commit}"
-        )
+        source_ref = _require_cli_value(args.source_ref, "source_ref")
+        source_commit = _require_cli_value(args.source_commit, "source_commit")
+        runner_json = _require_cli_value(args.runner_json, "runner_json")
+        runner_name = _require_cli_value(args.runner_name, "runner_name")
+        release_tag = _require_cli_value(args.release_tag, "release_tag")
         values = validate_inputs(
             policy,
             source_repository=source_repository,

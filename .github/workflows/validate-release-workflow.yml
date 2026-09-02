@@ -47,6 +47,34 @@ jobs:
       - name: Check release queue and immutable refs
         run: ruby tests/test_release_workflow.rb
 
+      - name: Install pinned Python linters
+        shell: bash
+        run: |
+          set -euo pipefail
+          lint_venv="$RUNNER_TEMP/release-lint-venv"
+          python3 -m venv "$lint_venv"
+          "$lint_venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            --no-cache-dir \
+            --only-binary=:all: \
+            --require-hashes \
+            --index-url https://pypi.org/simple \
+            -r .github/python-tools.txt
+          echo "$lint_venv/bin" >> "$GITHUB_PATH"
+
+      - name: Run Ruff
+        run: ruff check scripts tests
+
+      - name: Check Ruff formatting
+        run: ruff format --check scripts tests
+
+      - name: Run Pyright
+        run: pyright --pythonversion 3.12 scripts tests
+
+      - name: Run zizmor
+        run: zizmor --pedantic .github/workflows/*.yml
+
       - name: Install pinned actionlint
         shell: bash
         env:

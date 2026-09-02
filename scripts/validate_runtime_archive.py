@@ -45,6 +45,17 @@ class ArchiveError(ValueError):
     """Raised when an archive member or manifest is unsafe."""
 
 
+def _reject_duplicate_manifest_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for key, value in pairs:
+        if key in values:
+            raise ArchiveError(f"runtime manifest contains duplicate key: {key}")
+        values[key] = value
+    return values
+
+
 def _safe_member_name(name: str, package_name: str) -> PurePosixPath:
     if "\\" in name or "\x00" in name:
         raise ArchiveError(f"unsafe archive member name: {name!r}")
@@ -119,7 +130,10 @@ def _scan_members(
             if stream is None:
                 raise ArchiveError("runtime manifest cannot be read")
             try:
-                manifest = json.loads(stream.read(128 * 1024 + 1).decode("utf-8"))
+                manifest = json.loads(
+                    stream.read(128 * 1024 + 1).decode("utf-8"),
+                    object_pairs_hook=_reject_duplicate_manifest_keys,
+                )
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise ArchiveError(
                     f"runtime manifest is not valid UTF-8 JSON: {error}"

@@ -3,6 +3,22 @@ name: Build OWL Chromium Runtime
 on:
   workflow_dispatch:
     inputs:
+      source_repository:
+        description: Reviewed Chromium source repository URL
+        required: true
+        type: string
+      source_ref:
+        description: Reviewed Chromium source branch
+        required: true
+        type: string
+      source_commit:
+        description: Reviewed Chromium source commit (full SHA)
+        required: true
+        type: string
+      release_tag:
+        description: Immutable release tag bound to the reviewed source commit
+        required: true
+        type: string
       publish_release:
         description: Publish the reviewed artifact as an immutable GitHub Release
         required: true
@@ -71,14 +87,22 @@ jobs:
         shell: bash
         env:
           POLICY_PATH: ${{ github.workspace }}/.github/chromium-release-policy.json
+          SOURCE_REPOSITORY_INPUT: ${{ inputs.source_repository }}
+          SOURCE_REF_INPUT: ${{ inputs.source_ref }}
+          SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           test -r "$POLICY_PATH"
           command -v python3 >/dev/null
           python3 "$GITHUB_WORKSPACE/scripts/chromium_release_policy.py" \
             --policy "$POLICY_PATH" \
+            --source-repository "$SOURCE_REPOSITORY_INPUT" \
+            --source-ref "$SOURCE_REF_INPUT" \
+            --source-commit "$SOURCE_COMMIT_INPUT" \
             --runner-json "$RUNNER_JSON" \
             --runner-name "$RUNNER_NAME" \
+            --release-tag "$RELEASE_TAG_INPUT" \
             --output "$GITHUB_OUTPUT"
 
           [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]

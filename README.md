@@ -9,10 +9,12 @@ currently allowlists `manaflow-ai/chromium-src.git` at
 `feat/owl-fresh-host@7523a3a72320b403d509860f8ffaec9ac20d150e`, and pins
 `depot_tools` to commit `0833022c601133d858cbee4faf6bc5ce556afb14`.
 
-The workflow accepts one boolean dispatch input, `publish_release`. It must be
-dispatched from `main` in this repository. Source URL, source ref, source
-commit, runner labels, cache path, and release tag are not user inputs. The
-The build is scheduled only in the dedicated `chromium-release` runner group
+The workflow accepts four required string dispatch inputs, `source_repository`,
+`source_ref`, `source_commit`, and `release_tag`, plus the boolean
+`publish_release`. The identity values are supplied by the release operator and
+then compared with the checked-in policy. It must be dispatched from `main` in
+this repository. Runner labels, cache paths, and tool revisions are not user
+inputs. The build is scheduled only in the dedicated `chromium-release` runner group
 with the `chromium` label. The policy still requires the runtime labels
 `["self-hosted", "macOS", "ARM64", "chromium"]`. The runner name is also
 allowlisted as `aws-m1-ultra-chromium-1`; a renamed or unexpected runner fails
@@ -83,5 +85,6 @@ python3 -m unittest discover -s tests -v
 ruby tests/test_release_workflow.rb
 ```
 
-`validate-release-workflow.yml` runs these tests on pull requests and on
-changes to `main`.
+`validate-release-workflow.yml` runs these tests, Ruff, Pyright, actionlint, and
+zizmor on pull requests and on changes to `main`. Python lint tools are
+hash-locked in `.github/python-tools.txt`.
