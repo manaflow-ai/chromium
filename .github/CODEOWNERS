@@ -1,4 +1,7 @@
-# Release workflow and policy changes require both release maintainers.
+# Branch protection must require two approving reviews and code-owner review.
+# Owners on one CODEOWNERS line are alternatives, so the two-person rule is
+# enforced by the protected main branch, not by this file alone.
+.github/CODEOWNERS @austinywang @azooz2003-bit
 .github/workflows/** @austinywang @azooz2003-bit
 .github/chromium-release-policy.json @austinywang @azooz2003-bit
 scripts/chromium_release_policy.py @austinywang @azooz2003-bit

@@ -70,9 +70,10 @@ def _scan_members(
     manifest: dict[str, object] | None = None
     for member in archive:
         path = _safe_member_name(member.name, package_name)
-        if member.name in seen:
+        canonical_name = path.as_posix()
+        if canonical_name in seen:
             raise ArchiveError(f"duplicate archive member: {member.name!r}")
-        seen.add(member.name)
+        seen.add(canonical_name)
         if member.mode & (stat.S_ISUID | stat.S_ISGID):
             raise ArchiveError(f"setuid/setgid member is not allowed: {member.name!r}")
         if not (member.isdir() or member.isreg() or member.issym() or member.islnk()):
@@ -83,7 +84,7 @@ def _scan_members(
             root_entries.add(path.parts[1])
         if member.issym() or member.islnk():
             _safe_link_target(member, path, package_name)
-        if member.name == f"{package_name}/owl-runtime-manifest.json":
+        if path == PurePosixPath(package_name, "owl-runtime-manifest.json"):
             if not member.isreg() or member.size > 128 * 1024:
                 raise ArchiveError("runtime manifest must be a small regular file")
             stream = archive.extractfile(member)

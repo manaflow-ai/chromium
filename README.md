@@ -29,7 +29,9 @@ The build job has `contents: read`. Publication is a separate Ubuntu job with
 environment. Configure that environment with required reviews from
 `@austinywang` and `@azooz2003-bit`,
 disable administrator bypass, and enable GitHub immutable releases before
-setting `publish_release=true`. The publisher creates only
+setting `publish_release=true`. Protect `main` with at least two approving
+reviews, require code-owner review, and prevent administrator bypass. The
+publisher creates only
 `owl-chromium-<full-source-sha>`, refuses a tag that points at another commit,
 and refuses conflicting or missing assets on an already published release.
 An interrupted draft release can be resumed only when every existing asset has

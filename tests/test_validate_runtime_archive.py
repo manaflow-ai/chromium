@@ -114,6 +114,16 @@ class RuntimeArchiveTests(unittest.TestCase):
             with self.assertRaises(validator.ArchiveError):
                 self._validate(path)
 
+    def test_rejects_duplicate_normalized_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(
+                path,
+                extra=(f"{PACKAGE_NAME}/./owl-build-args.gn", "replacement"),
+            )
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
 
 if __name__ == "__main__":
     unittest.main()
