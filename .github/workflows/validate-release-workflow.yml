@@ -44,6 +44,9 @@ jobs:
       - name: Compile Python tools
         run: python3 -m py_compile scripts/*.py tests/*.py
 
+      - name: Check release queue and immutable refs
+        run: ruby tests/test_release_workflow.rb
+
       - name: Install pinned actionlint
         shell: bash
         env:

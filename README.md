@@ -78,6 +78,7 @@ Run the policy and archive tests with:
 
 ```bash
 python3 -m unittest discover -s tests -v
+ruby tests/test_release_workflow.rb
 ```
 
 `validate-release-workflow.yml` runs these tests on pull requests and on
