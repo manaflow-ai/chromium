@@ -6,6 +6,7 @@ on:
       - .github/CODEOWNERS
       - .github/actionlint.yaml
       - .github/chromium-release-policy.json
+      - .github/python-tools.txt
       - .github/workflows/**
       - scripts/**
       - tests/**
@@ -16,6 +17,7 @@ on:
       - .github/CODEOWNERS
       - .github/actionlint.yaml
       - .github/chromium-release-policy.json
+      - .github/python-tools.txt
       - .github/workflows/**
       - scripts/**
       - tests/**

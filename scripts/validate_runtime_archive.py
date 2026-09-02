@@ -30,6 +30,7 @@ REQUIRED_ROOT_DIRECTORIES = frozenset(
     }
 )
 REQUIRED_ROOT_FILES = REQUIRED_ROOT_ENTRIES - REQUIRED_ROOT_DIRECTORIES
+REQUIRED_NONEMPTY_ROOT_FILES = frozenset({"libowl_fresh_mojo_runtime.dylib"})
 REQUIRED_EXECUTABLES = frozenset(
     {
         "Content Shell.app/Contents/MacOS/Content Shell",
@@ -167,6 +168,12 @@ def validate_archive(
         )
     if manifest is None:
         raise ArchiveError("archive does not contain a runtime manifest")
+    for root_file in REQUIRED_NONEMPTY_ROOT_FILES:
+        member = members.get(f"{package_name}/{root_file}")
+        if member is None or not member.isreg() or member.size <= 0:
+            raise ArchiveError(
+                f"required runtime file is missing or empty: {root_file!r}"
+            )
     for executable in REQUIRED_EXECUTABLES:
         member = members.get(f"{package_name}/{executable}")
         if (
