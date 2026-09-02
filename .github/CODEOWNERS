@@ -4,6 +4,6 @@
 .github/CODEOWNERS @austinywang @azooz2003-bit
 .github/workflows/** @austinywang @azooz2003-bit
 .github/chromium-release-policy.json @austinywang @azooz2003-bit
-scripts/chromium_release_policy.py @austinywang @azooz2003-bit
-scripts/validate_runtime_archive.py @austinywang @azooz2003-bit
+.github/python-tools.txt @austinywang @azooz2003-bit
+scripts/** @austinywang @azooz2003-bit
 tests/** @austinywang @azooz2003-bit

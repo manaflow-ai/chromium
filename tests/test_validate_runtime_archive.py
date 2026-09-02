@@ -154,6 +154,19 @@ class RuntimeArchiveTests(unittest.TestCase):
             with self.assertRaises(validator.ArchiveError):
                 self._validate(path)
 
+    def test_accepts_hard_link_within_package(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(
+                path,
+                link=(
+                    f"{PACKAGE_NAME}/alias",
+                    f"{PACKAGE_NAME}/{REQUIRED_EXECUTABLES[0]}",
+                ),
+                link_type=tarfile.LNKTYPE,
+            )
+            self._validate(path)
+
     def test_rejects_manifest_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime.tar.gz"

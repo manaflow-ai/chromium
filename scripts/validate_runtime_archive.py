@@ -74,15 +74,15 @@ def _safe_member_name(name: str, package_name: str) -> PurePosixPath:
 def _safe_link_target(
     member: tarfile.TarInfo, path: PurePosixPath, package_name: str
 ) -> None:
-    target = PurePosixPath(member.linkname)
-    if (
-        not member.linkname
-        or target.is_absolute()
-        or "\\" in member.linkname
-        or "\x00" in member.linkname
-    ):
+    if not member.linkname or "\\" in member.linkname or "\x00" in member.linkname:
         raise ArchiveError(f"unsafe link target for {member.name!r}")
-    resolved = path.parent / target
+    target = PurePosixPath(member.linkname)
+    if member.islnk():
+        resolved = _safe_member_name(member.linkname, package_name)
+    else:
+        if target.is_absolute():
+            raise ArchiveError(f"unsafe link target for {member.name!r}")
+        resolved = path.parent / target
     if (
         ".." in resolved.parts
         or not resolved.parts
@@ -141,6 +141,15 @@ def _scan_members(
                 ) from error
             if not isinstance(manifest, dict):
                 raise ArchiveError("runtime manifest must be a JSON object")
+    for member in members.values():
+        if not member.islnk():
+            continue
+        target_path = _safe_member_name(member.linkname, package_name).as_posix()
+        target_member = members.get(target_path)
+        if target_member is None or not target_member.isreg():
+            raise ArchiveError(
+                f"hard link target must be an archived regular file: {member.name!r}"
+            )
     return root_entries, manifest, members
 
 

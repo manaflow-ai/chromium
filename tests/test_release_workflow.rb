@@ -82,6 +82,8 @@ codeowners_path = File.expand_path("../.github/CODEOWNERS", __dir__)
 codeowners = File.read(codeowners_path)
 abort "all release scripts must have code-owner review" unless
   codeowners.lines.any? { |line| line.start_with?("scripts/** ") }
+abort "Python tool lock must have code-owner review" unless
+  codeowners.lines.any? { |line| line.start_with?(".github/python-tools.txt ") }
 
 validation_jobs = validation_workflow.fetch("jobs")
 validation_steps = validation_jobs.fetch("tests").fetch("steps").map do |step|

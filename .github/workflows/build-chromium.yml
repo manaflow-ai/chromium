@@ -542,44 +542,46 @@ jobs:
           }
 
           release_json=""
-          if release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG" 2>/dev/null)"; then
-            validate_existing_release "$release_json"
-            draft="$(jq -r '.draft' <<<"$release_json")"
-            for asset in "$archive" "$sha_file"; do
-              asset_name="$(basename "$asset")"
-              if [ "$asset_name" = "$ARCHIVE_NAME" ]; then
-                expected_digest="$archive_digest"
-              else
-                expected_digest="$checksum_digest"
-              fi
-              existing_count="$(jq -r --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")"
-              existing_digest="$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest // ""' <<<"$release_json" | head -n 1)"
-              if [ "$existing_count" -gt 0 ]; then
-                [[ "$existing_digest" == "$expected_digest" ]] || {
-                  echo "release asset $asset_name has a conflicting digest" >&2
-                  exit 1
-                }
-              elif [ "$draft" == true ]; then
-                gh release upload "$RELEASE_TAG" "$asset" --repo "$repo"
-              else
-                echo "published release is missing asset $asset_name" >&2
-                exit 1
-              fi
-            done
-            if [ "$draft" == true ]; then
-              refreshed_release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG")"
-              validate_existing_release "$refreshed_release_json" complete
-              [ "$(jq -r '.draft' <<<"$refreshed_release_json")" = true ] || {
-                echo "release changed while validating its draft assets" >&2
-                exit 1
-              }
-              gh release edit "$RELEASE_TAG" --repo "$repo" --draft=false --latest=false
-            fi
-          else
-            gh release create "$RELEASE_TAG" "$archive" "$sha_file" \
+          if ! release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            gh release create "$RELEASE_TAG" \
               --repo "$repo" \
               --verify-tag \
               --title "OWL Chromium runtime ${SOURCE_COMMIT:0:12}" \
               --notes-file "$notes_file" \
+              --draft \
               --latest=false
+            release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG")"
+          fi
+
+          validate_existing_release "$release_json"
+          draft="$(jq -r '.draft' <<<"$release_json")"
+          for asset in "$archive" "$sha_file"; do
+            asset_name="$(basename "$asset")"
+            if [ "$asset_name" = "$ARCHIVE_NAME" ]; then
+              expected_digest="$archive_digest"
+            else
+              expected_digest="$checksum_digest"
+            fi
+            existing_count="$(jq -r --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")"
+            existing_digest="$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest // ""' <<<"$release_json" | head -n 1)"
+            if [ "$existing_count" -gt 0 ]; then
+              [[ "$existing_digest" == "$expected_digest" ]] || {
+                echo "release asset $asset_name has a conflicting digest" >&2
+                exit 1
+              }
+            elif [ "$draft" == true ]; then
+              gh release upload "$RELEASE_TAG" "$asset" --repo "$repo"
+            else
+              echo "published release is missing asset $asset_name" >&2
+              exit 1
+            fi
+          done
+          if [ "$draft" == true ]; then
+            refreshed_release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG")"
+            validate_existing_release "$refreshed_release_json" complete
+            [ "$(jq -r '.draft' <<<"$refreshed_release_json")" = true ] || {
+              echo "release changed while validating its draft assets" >&2
+              exit 1
+            }
+            gh release edit "$RELEASE_TAG" --repo "$repo" --draft=false --latest=false
           fi
