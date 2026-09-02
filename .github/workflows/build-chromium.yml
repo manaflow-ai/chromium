@@ -45,7 +45,11 @@ jobs:
       github.repository == 'manaflow-ai/chromium'
     runs-on:
       group: chromium-release
-      labels: chromium
+      labels:
+        - self-hosted
+        - macOS
+        - ARM64
+        - chromium
     permissions:
       contents: read
     timeout-minutes: 720
@@ -76,6 +80,8 @@ jobs:
           [[ "$GITHUB_REPOSITORY" == "$EXPECTED_REPOSITORY" ]]
           [[ "$GITHUB_REF" == "$EXPECTED_REF" ]]
           [[ "$GITHUB_EVENT_NAME" == "$EXPECTED_EVENT" ]]
+          [[ "$RUNNER_OS" == "macOS" ]]
+          [[ "$RUNNER_ARCH" == "ARM64" ]]
           checked_out_commit="$(git rev-parse HEAD)"
           [[ "$checked_out_commit" == "$GITHUB_SHA" ]] || {
             echo "artifact checkout $checked_out_commit does not match dispatch SHA $GITHUB_SHA" >&2
