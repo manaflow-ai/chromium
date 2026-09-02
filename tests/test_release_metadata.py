@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,7 +95,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             self._validate(release)
 
     def test_rejects_duplicate_json_keys(self) -> None:
-        body = '{"tag_name":"%s","tag_name":"%s"}' % (TAG, TAG)
+        body = f'{{"tag_name":"{TAG}","tag_name":"{TAG}"}}'
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "release.json"
             path.write_text(body, encoding="utf-8")

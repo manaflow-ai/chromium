@@ -510,12 +510,42 @@ jobs:
           Artifact workflow run: $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)
           EOF
 
+          archive_digest="sha256:$(sha256sum "$archive" | awk '{ print $1 }')"
+          checksum_name="$(basename "$sha_file")"
+          checksum_digest="sha256:$(sha256sum "$sha_file" | awk '{ print $1 }')"
+
+          validate_existing_release() {
+            local release_payload="$1"
+            local completeness="${2:-allow-missing}"
+            local metadata_path="$RUNNER_TEMP/owl-runtime-release.json"
+            local -a completeness_args=()
+            if [ "$completeness" = complete ]; then
+              completeness_args=(--require-complete)
+            fi
+            umask 077
+            printf '%s\n' "$release_payload" > "$metadata_path"
+            python3 "$GITHUB_WORKSPACE/scripts/validate_release_metadata.py" \
+              --release-json "$metadata_path" \
+              --tag "$RELEASE_TAG" \
+              --title "OWL Chromium runtime ${SOURCE_COMMIT:0:12}" \
+              --archive-name "$ARCHIVE_NAME" \
+              --archive-digest "$archive_digest" \
+              --checksum-name "$checksum_name" \
+              --checksum-digest "$checksum_digest" \
+              "${completeness_args[@]}"
+          }
+
           release_json=""
           if release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            validate_existing_release "$release_json"
             draft="$(jq -r '.draft' <<<"$release_json")"
             for asset in "$archive" "$sha_file"; do
               asset_name="$(basename "$asset")"
-              expected_digest="sha256:$(sha256sum "$asset" | awk '{ print $1 }')"
+              if [ "$asset_name" = "$ARCHIVE_NAME" ]; then
+                expected_digest="$archive_digest"
+              else
+                expected_digest="$checksum_digest"
+              fi
               existing_count="$(jq -r --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")"
               existing_digest="$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest // ""' <<<"$release_json" | head -n 1)"
               if [ "$existing_count" -gt 0 ]; then
@@ -531,6 +561,12 @@ jobs:
               fi
             done
             if [ "$draft" == true ]; then
+              refreshed_release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG")"
+              validate_existing_release "$refreshed_release_json" complete
+              [ "$(jq -r '.draft' <<<"$refreshed_release_json")" = true ] || {
+                echo "release changed while validating its draft assets" >&2
+                exit 1
+              }
               gh release edit "$RELEASE_TAG" --repo "$repo" --draft=false --latest=false
             fi
           else
