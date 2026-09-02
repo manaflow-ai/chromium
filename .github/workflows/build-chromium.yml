@@ -19,7 +19,6 @@ concurrency:
 env:
   DEPOT_TOOLS_UPDATE: "0"
   RUNNER_JSON: '["self-hosted","macOS","ARM64","chromium"]'
-  POLICY_FILE: .github/chromium-release-policy.json
 
 jobs:
   build:
@@ -38,16 +37,25 @@ jobs:
       source-repository: ${{ steps.inputs.outputs.source_repository }}
       source-ref: ${{ steps.inputs.outputs.source_ref }}
       source-commit: ${{ steps.inputs.outputs.source_commit }}
-      short-sha: ${{ steps.inputs.outputs.short_sha }}
       release-tag: ${{ steps.inputs.outputs.release_tag }}
     steps:
       - name: Check out reviewed artifact repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: refs/heads/main
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
           clean: true
+
+      - name: Verify release validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out_commit="$(git rev-parse HEAD)"
+          [[ "$checked_out_commit" == "$GITHUB_SHA" ]] || {
+            echo "release validators $checked_out_commit do not match dispatch SHA $GITHUB_SHA" >&2
+            exit 1
+          }
 
       - name: Verify trusted dispatch ref
         shell: bash
