@@ -6,12 +6,9 @@ on:
       - .github/CODEOWNERS
       - .github/actionlint.yaml
       - .github/chromium-release-policy.json
-      - .github/workflows/build-chromium.yml
-      - .github/workflows/validate-release-workflow.yml
-      - scripts/chromium_release_policy.py
-      - scripts/validate_runtime_archive.py
-      - tests/test_chromium_release_policy.py
-      - tests/test_validate_runtime_archive.py
+      - .github/workflows/**
+      - scripts/**
+      - tests/**
   push:
     branches:
       - main
@@ -19,12 +16,9 @@ on:
       - .github/CODEOWNERS
       - .github/actionlint.yaml
       - .github/chromium-release-policy.json
-      - .github/workflows/build-chromium.yml
-      - .github/workflows/validate-release-workflow.yml
-      - scripts/chromium_release_policy.py
-      - scripts/validate_runtime_archive.py
-      - tests/test_chromium_release_policy.py
-      - tests/test_validate_runtime_archive.py
+      - .github/workflows/**
+      - scripts/**
+      - tests/**
 
 permissions:
   contents: read
