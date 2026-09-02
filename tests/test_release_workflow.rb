@@ -53,8 +53,8 @@ end
 build_runner = jobs.fetch("build").fetch("runs-on")
 abort "build must use the dedicated Chromium runner group" unless
   build_runner.fetch("group") == "chromium-release"
-abort "build must retain the Chromium runner label" unless
-  build_runner.fetch("labels") == "chromium"
+abort "build must require the complete Chromium runner label set" unless
+  build_runner.fetch("labels") == %w[self-hosted macOS ARM64 chromium]
 
 publish_checkout = jobs.fetch("publish").fetch("steps").find do |step|
   step["name"] == "Check out release validators"
