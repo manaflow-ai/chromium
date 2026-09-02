@@ -14,6 +14,12 @@ SOURCE_REPOSITORY = "https://github.com/manaflow-ai/chromium-src.git"
 SOURCE_REF = "feat/owl-fresh-host"
 SOURCE_COMMIT = "7523a3a72320b403d509860f8ffaec9ac20d150e"
 ARTIFACT_REPOSITORY = "manaflow-ai/chromium"
+REQUIRED_EXECUTABLES = (
+    "Content Shell.app/Contents/MacOS/Content Shell",
+    "Content Shell Helper.app/Contents/MacOS/Content Shell Helper",
+    "Content Shell Helper (GPU).app/Contents/MacOS/Content Shell Helper (GPU)",
+    "Content Shell Helper (Renderer).app/Contents/MacOS/Content Shell Helper (Renderer)",
+)
 
 
 def _manifest() -> dict[str, object]:
@@ -44,6 +50,8 @@ def _write_archive(
     extra_mode: int = 0o644,
     extra_type: bytes | None = None,
     root_type: bytes = tarfile.DIRTYPE,
+    executable_mode: int = 0o755,
+    omit_executable: str | None = None,
 ) -> None:
     with tarfile.open(path, "w:gz") as archive:
         root = tarfile.TarInfo(f"{PACKAGE_NAME}/")
@@ -60,6 +68,14 @@ def _write_archive(
             item = tarfile.TarInfo(f"{PACKAGE_NAME}/{name}")
             item.type = tarfile.DIRTYPE
             archive.addfile(item)
+        for name in REQUIRED_EXECUTABLES:
+            if name == omit_executable:
+                continue
+            body = b"executable"
+            item = tarfile.TarInfo(f"{PACKAGE_NAME}/{name}")
+            item.mode = executable_mode
+            item.size = len(body)
+            archive.addfile(item, io.BytesIO(body))
         for name, body in (
             ("libowl_fresh_mojo_runtime.dylib", b"runtime"),
             ("owl-build-args.gn", b'target_cpu = "arm64"\n'),
@@ -197,6 +213,20 @@ class RuntimeArchiveTests(unittest.TestCase):
                     source_commit=SOURCE_COMMIT,
                     artifact_repository=ARTIFACT_REPOSITORY,
                 )
+
+    def test_rejects_missing_runtime_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(path, omit_executable=REQUIRED_EXECUTABLES[0])
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_non_executable_runtime_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(path, executable_mode=0o644)
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
 
 
 if __name__ == "__main__":

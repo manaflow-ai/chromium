@@ -27,7 +27,7 @@ through an exact branch ref, checked against the approved full commit, and
 checked for a clean tree after `gclient sync`.
 
 The build job has `contents: read`. Publication is a separate Ubuntu job with
-`contents: write`, an `actions: read` artifact token, and the `release`
+`contents: write`, an `actions: read` artifact token, and the `chromium-release`
 environment. Configure that environment with required reviews from
 `@austinywang` and `@azooz2003-bit`,
 disable administrator bypass, and enable GitHub immutable releases before

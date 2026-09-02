@@ -30,6 +30,14 @@ REQUIRED_ROOT_DIRECTORIES = frozenset(
     }
 )
 REQUIRED_ROOT_FILES = REQUIRED_ROOT_ENTRIES - REQUIRED_ROOT_DIRECTORIES
+REQUIRED_EXECUTABLES = frozenset(
+    {
+        "Content Shell.app/Contents/MacOS/Content Shell",
+        "Content Shell Helper.app/Contents/MacOS/Content Shell Helper",
+        "Content Shell Helper (GPU).app/Contents/MacOS/Content Shell Helper (GPU)",
+        "Content Shell Helper (Renderer).app/Contents/MacOS/Content Shell Helper (Renderer)",
+    }
+)
 EXPECTED_TARGETS = ["content_shell", "owl_fresh_mojo_runtime"]
 
 
@@ -73,16 +81,18 @@ def _safe_link_target(
 
 def _scan_members(
     archive: tarfile.TarFile, package_name: str
-) -> tuple[set[str], dict[str, object] | None]:
+) -> tuple[set[str], dict[str, object] | None, dict[str, tarfile.TarInfo]]:
     seen: set[str] = set()
     root_entries: set[str] = set()
     manifest: dict[str, object] | None = None
+    members: dict[str, tarfile.TarInfo] = {}
     for member in archive:
         path = _safe_member_name(member.name, package_name)
         canonical_name = path.as_posix()
         if canonical_name in seen:
             raise ArchiveError(f"duplicate archive member: {member.name!r}")
         seen.add(canonical_name)
+        members[canonical_name] = member
         if member.mode & (stat.S_ISUID | stat.S_ISGID):
             raise ArchiveError(f"setuid/setgid member is not allowed: {member.name!r}")
         if not (member.isdir() or member.isreg() or member.issym() or member.islnk()):
@@ -116,7 +126,7 @@ def _scan_members(
                 ) from error
             if not isinstance(manifest, dict):
                 raise ArchiveError("runtime manifest must be a JSON object")
-    return root_entries, manifest
+    return root_entries, manifest, members
 
 
 def validate_archive(
@@ -132,7 +142,7 @@ def validate_archive(
         raise ArchiveError("package name must be a single safe path component")
     try:
         with tarfile.open(archive_path, mode="r:gz") as archive:
-            root_entries, manifest = _scan_members(archive, package_name)
+            root_entries, manifest, members = _scan_members(archive, package_name)
     except (OSError, tarfile.TarError) as error:
         raise ArchiveError(f"cannot read archive: {error}") from error
 
@@ -143,6 +153,17 @@ def validate_archive(
         )
     if manifest is None:
         raise ArchiveError("archive does not contain a runtime manifest")
+    for executable in REQUIRED_EXECUTABLES:
+        member = members.get(f"{package_name}/{executable}")
+        if (
+            member is None
+            or not member.isreg()
+            or member.size <= 0
+            or not member.mode & 0o111
+        ):
+            raise ArchiveError(
+                f"runtime executable is missing, empty, or not executable: {executable!r}"
+            )
     expected = {
         "chromiumSourceRepo": source_repository,
         "chromiumSourceRef": source_ref,

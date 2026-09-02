@@ -379,7 +379,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     environment:
-      name: release
+      name: chromium-release
     permissions:
       actions: read # Download only the artifact produced by this run.
       contents: write # Sole writer of tags and releases, after environment approval.
