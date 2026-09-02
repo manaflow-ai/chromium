@@ -58,6 +58,14 @@ abort "publish checkout must use the immutable dispatch SHA" unless
 
 abort "publish must use the protected chromium-release environment" unless
   jobs.fetch("publish").fetch("environment").fetch("name") == "chromium-release"
+publish_step = jobs.fetch("publish").fetch("steps").find do |step|
+  step["name"] == "Publish immutable release"
+end
+abort "publish step is missing" unless publish_step
+abort "publish must validate release metadata" unless
+  publish_step.fetch("run").include?("validate_release_metadata.py")
+abort "publish must require a complete release asset set before promotion" unless
+  publish_step.fetch("run").include?("--require-complete")
 
 validation_jobs = validation_workflow.fetch("jobs")
 validation_steps = validation_jobs.fetch("tests").fetch("steps").map do |step|
