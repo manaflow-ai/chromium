@@ -54,6 +54,7 @@ def _write_archive(
     omit_executable: str | None = None,
     executable_body: bytes = b"executable",
     runtime_library_body: bytes = b"runtime",
+    link_type: bytes = tarfile.SYMTYPE,
 ) -> None:
     with tarfile.open(path, "w:gz") as archive:
         root = tarfile.TarInfo(f"{PACKAGE_NAME}/")
@@ -106,7 +107,7 @@ def _write_archive(
         if link is not None:
             name, target = link
             item = tarfile.TarInfo(name)
-            item.type = tarfile.SYMTYPE
+            item.type = link_type
             item.linkname = target
             archive.addfile(item)
 
@@ -139,6 +140,17 @@ class RuntimeArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime.tar.gz"
             _write_archive(path, link=(f"{PACKAGE_NAME}/escape", "../../outside"))
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_hard_link_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(
+                path,
+                link=(f"{PACKAGE_NAME}/escape", "outside"),
+                link_type=tarfile.LNKTYPE,
+            )
             with self.assertRaises(validator.ArchiveError):
                 self._validate(path)
 

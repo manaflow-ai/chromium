@@ -69,10 +69,19 @@ publish_step = jobs.fetch("publish").fetch("steps").find do |step|
   step["name"] == "Publish immutable release"
 end
 abort "publish step is missing" unless publish_step
+publish_run = publish_step.fetch("run")
+create_command = publish_run[/gh release create.*?--latest=false/m]
+abort "publish must create releases as drafts before uploading assets" unless
+  create_command&.include?("--draft")
 abort "publish must validate release metadata" unless
-  publish_step.fetch("run").include?("validate_release_metadata.py")
+  publish_run.include?("validate_release_metadata.py")
 abort "publish must require a complete release asset set before promotion" unless
-  publish_step.fetch("run").include?("--require-complete")
+  publish_run.include?("--require-complete")
+
+codeowners_path = File.expand_path("../.github/CODEOWNERS", __dir__)
+codeowners = File.read(codeowners_path)
+abort "all release scripts must have code-owner review" unless
+  codeowners.lines.any? { |line| line.start_with?("scripts/** ") }
 
 validation_jobs = validation_workflow.fetch("jobs")
 validation_steps = validation_jobs.fetch("tests").fetch("steps").map do |step|
