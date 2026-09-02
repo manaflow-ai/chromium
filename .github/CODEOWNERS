@@ -6,3 +6,4 @@
 .github/chromium-release-policy.json @austinywang @azooz2003-bit
 scripts/chromium_release_policy.py @austinywang @azooz2003-bit
 scripts/validate_runtime_archive.py @austinywang @azooz2003-bit
+tests/** @austinywang @azooz2003-bit

@@ -20,6 +20,12 @@ abort "build checkout step is missing" unless build_checkout
 abort "build checkout must use the immutable dispatch SHA" unless
   build_checkout.fetch("with").fetch("ref") == "${{ github.sha }}"
 
+build_runner = jobs.fetch("build").fetch("runs-on")
+abort "build must use the dedicated Chromium runner group" unless
+  build_runner.fetch("group") == "chromium-release"
+abort "build must retain the Chromium runner label" unless
+  build_runner.fetch("labels") == "chromium"
+
 publish_checkout = jobs.fetch("publish").fetch("steps").find do |step|
   step["name"] == "Check out release validators"
 end

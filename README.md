@@ -12,9 +12,11 @@ currently allowlists `manaflow-ai/chromium-src.git` at
 The workflow accepts one boolean dispatch input, `publish_release`. It must be
 dispatched from `main` in this repository. Source URL, source ref, source
 commit, runner labels, cache path, and release tag are not user inputs. The
-runner labels are fixed to `["self-hosted", "macOS", "ARM64", "chromium"]`.
-The runner name is also allowlisted as `aws-m1-ultra-chromium-1`; a renamed or
-unexpected runner fails before source synchronization.
+The build is scheduled only in the dedicated `chromium-release` runner group
+with the `chromium` label. The policy still requires the runtime labels
+`["self-hosted", "macOS", "ARM64", "chromium"]`. The runner name is also
+allowlisted as `aws-m1-ultra-chromium-1`; a renamed or unexpected runner fails
+before source synchronization.
 The policy validator fails closed if any value, including a future policy edit,
 does not match its allowlist.
 
@@ -43,11 +45,11 @@ manifests that do not match the reviewed source and targets.
 
 ## Self-hosted runner boundary
 
-The `chromium` runner label must identify a dedicated, disposable macOS runner
-with no user credentials, deployment keys, or unrelated repositories. Chromium
-`DEPS` hooks execute during `gclient sync`, so the source commit allowlist and
-runner isolation are both required. Do not add a persistent cache input or
-reuse a runner for unrelated jobs.
+The `chromium-release` runner group must contain only a dedicated, disposable
+macOS runner with no user credentials, deployment keys, or unrelated
+repositories. Chromium `DEPS` hooks execute during `gclient sync`, so the
+source commit allowlist and runner isolation are both required. Do not add a
+persistent cache input or reuse a runner for unrelated jobs.
 
 The runner must have Xcode first-launch initialization and the Metal Toolchain:
 
