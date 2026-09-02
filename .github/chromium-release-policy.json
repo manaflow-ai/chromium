@@ -1,0 +1,19 @@
+{
+  "source_repository": "https://github.com/manaflow-ai/chromium-src.git",
+  "source_ref": "feat/owl-fresh-host",
+  "approved_source_commits": [
+    "7523a3a72320b403d509860f8ffaec9ac20d150e"
+  ],
+  "runner_labels": [
+    "self-hosted",
+    "macOS",
+    "ARM64",
+    "chromium"
+  ],
+  "runner_names": [
+    "aws-m1-ultra-chromium-1"
+  ],
+  "depot_tools_repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+  "depot_tools_commit": "0833022c601133d858cbee4faf6bc5ce556afb14",
+  "release_tag_prefix": "owl-chromium-"
+}

@@ -1,0 +1,49 @@
+name: Validate release workflow
+
+on:
+  pull_request:
+    paths:
+      - .github/actionlint.yaml
+      - .github/chromium-release-policy.json
+      - .github/workflows/build-chromium.yml
+      - .github/workflows/validate-release-workflow.yml
+      - scripts/chromium_release_policy.py
+      - scripts/validate_runtime_archive.py
+      - tests/test_chromium_release_policy.py
+      - tests/test_validate_runtime_archive.py
+  push:
+    branches:
+      - main
+    paths:
+      - .github/actionlint.yaml
+      - .github/chromium-release-policy.json
+      - .github/workflows/build-chromium.yml
+      - .github/workflows/validate-release-workflow.yml
+      - scripts/chromium_release_policy.py
+      - scripts/validate_runtime_archive.py
+      - tests/test_chromium_release_policy.py
+      - tests/test_validate_runtime_archive.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-release-workflow-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Policy and archive tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Run Python tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Compile Python tools
+        run: python3 -m py_compile scripts/*.py tests/*.py

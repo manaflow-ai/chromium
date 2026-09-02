@@ -2,52 +2,52 @@
 
 Release artifacts for the cmux OWL Chromium runtime.
 
-## Default release build
+## Reviewed build policy
 
-The default GitHub Actions workflow builds the pinned OWL Chromium fork:
+`.github/chromium-release-policy.json` is the only source of build inputs. It
+currently allowlists `manaflow-ai/chromium-src.git` at
+`feat/owl-fresh-host@7523a3a72320b403d509860f8ffaec9ac20d150e`, and pins
+`depot_tools` to commit `0833022c601133d858cbee4faf6bc5ce556afb14`.
 
-- source repo: `https://github.com/manaflow-ai/chromium-src.git`
-- source ref: `feat/owl-fresh-host`
-- source commit: `7523a3a72320b403d509860f8ffaec9ac20d150e`
-- default runner: `["self-hosted", "macOS", "ARM64", "chromium"]`
-- default gclient cache: `/Users/ec2-user/.cache/owl-chromium-gclient`
-- ninja targets: `content_shell owl_fresh_mojo_runtime`
+The workflow accepts one boolean dispatch input, `publish_release`. It must be
+dispatched from `main` in this repository. Source URL, source ref, source
+commit, runner labels, cache path, and release tag are not user inputs. The
+runner labels are fixed to `["self-hosted", "macOS", "ARM64", "chromium"]`.
+The runner name is also allowlisted as `aws-m1-ultra-chromium-1`; a renamed or
+unexpected runner fails before source synchronization.
+The policy validator fails closed if any value, including a future policy edit,
+does not match its allowlist.
 
-The workflow uses `$RUNNER_TEMP/owl-chromium-<run-id>-<attempt>` for depot_tools,
-Chromium source, and build output. It configures `gclient` directly against the
-pinned source fork and syncs `src@<commit>`. It does not use `~/chromium`, so
-separate runners can build in parallel without sharing a checkout. The default
-AWS runners share only the gclient git cache.
+Builds use a randomly created mode-700 directory below `$RUNNER_TEMP`, an
+ephemeral `HOME`, and an ephemeral gclient cache. The checked-out artifact
+repository does not persist Git credentials. The Chromium source is resolved
+through an exact branch ref, checked against the approved full commit, and
+checked for a clean tree after `gclient sync`.
 
-Run it from GitHub Actions with the default inputs to produce an artifact. Set
-`publish_release=true` to publish the archive and SHA-256 file as a GitHub
-Release.
+The build job has `contents: read`. Publication is a separate Ubuntu job with
+`contents: write`, an `actions: read` artifact token, and the `release`
+environment. Configure that environment with required reviews from
+`@austinywang` and `@azooz2003-bit`,
+disable administrator bypass, and enable GitHub immutable releases before
+setting `publish_release=true`. The publisher creates only
+`owl-chromium-<full-source-sha>`, refuses a tag that points at another commit,
+and refuses conflicting or missing assets on an already published release.
+An interrupted draft release can be resumed only when every existing asset has
+the expected digest.
 
-## Self-hosted runners
+The archive validator rejects absolute or traversal paths, links that escape
+the package root, duplicate entries, special files, setuid/setgid entries, and
+manifests that do not match the reviewed source and targets.
 
-The `runner_json` workflow input controls the runner labels. The default is:
+## Self-hosted runner boundary
 
-```json
-["self-hosted", "macOS", "ARM64", "chromium"]
-```
+The `chromium` runner label must identify a dedicated, disposable macOS runner
+with no user credentials, deployment keys, or unrelated repositories. Chromium
+`DEPS` hooks execute during `gclient sync`, so the source commit allowlist and
+runner isolation are both required. Do not add a persistent cache input or
+reuse a runner for unrelated jobs.
 
-For a Warp managed runner, use labels such as:
-
-```json
-["warp-macos-26-arm64-6x"]
-```
-
-Parallel Chromium builds require multiple runner services or multiple machines.
-One macOS runner service executes one job at a time. Running multiple runner
-services on the same Mac is possible, but each service needs a separate runner
-work directory and enough disk for an isolated Chromium checkout.
-
-Self-hosted runners pass an absolute `gclient_cache_dir` input to reuse a local
-git cache while still creating a fresh per-run working checkout. Leave it empty
-for fully fresh release verification.
-
-AWS runner setup must include Xcode first-launch initialization and the Metal
-Toolchain component:
+The runner must have Xcode first-launch initialization and the Metal Toolchain:
 
 ```bash
 sudo xcodebuild -downloadComponent MetalToolchain
@@ -66,5 +66,17 @@ The archive contains:
 - `owl-build-args.gn`
 - `owl-runtime-manifest.json`
 
-The manifest records source repo, source ref, source commit, workflow run ID,
-runner, GN output directory, and ninja targets.
+The manifest records source repository, source ref and commit, workflow run,
+runner metadata, GN output directory, and ninja targets. The sidecar checksum
+always names the archive by basename, so it is portable between runners.
+
+## Tests
+
+Run the policy and archive tests with:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+`validate-release-workflow.yml` runs these tests on pull requests and on
+changes to `main`.

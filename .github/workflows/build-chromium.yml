@@ -3,83 +3,102 @@ name: Build OWL Chromium Runtime
 on:
   workflow_dispatch:
     inputs:
-      chromium_repo:
-        description: "Chromium source fork URL"
-        required: true
-        default: "https://github.com/manaflow-ai/chromium-src.git"
-      chromium_ref:
-        description: "Ref to fetch from the source fork"
-        required: true
-        default: "feat/owl-fresh-host"
-      chromium_commit:
-        description: "Expected Chromium source commit"
-        required: true
-        default: "7523a3a72320b403d509860f8ffaec9ac20d150e"
-      gclient_cache_dir:
-        description: "Optional absolute gclient cache dir for self-hosted runners"
-        required: false
-        default: "/Users/ec2-user/.cache/owl-chromium-gclient"
-      runner_json:
-        description: "JSON runs-on labels, for example [\"warp-macos-26-arm64-6x\"] or [\"self-hosted\",\"macOS\",\"ARM64\",\"chromium\"]"
-        required: true
-        default: "[\"self-hosted\",\"macOS\",\"ARM64\",\"chromium\"]"
       publish_release:
-        description: "Publish a GitHub Release in manaflow-ai/chromium"
+        description: Publish the reviewed artifact as an immutable GitHub Release
         required: true
         type: boolean
         default: false
-      release_tag:
-        description: "Release tag to publish when publish_release is true"
-        required: true
-        default: "owl-chromium-7523a3a72320"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: owl-chromium-${{ github.repository }}
+  cancel-in-progress: false
 
 env:
-  DEPOT_TOOLS_UPDATE: 0
+  DEPOT_TOOLS_UPDATE: "0"
+  RUNNER_JSON: '["self-hosted","macOS","ARM64","chromium"]'
+  POLICY_FILE: .github/chromium-release-policy.json
 
 jobs:
   build:
-    name: Build pinned OWL Chromium runtime
-    runs-on: ${{ fromJSON(inputs.runner_json) }}
+    name: Build reviewed OWL Chromium runtime
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'manaflow-ai/chromium'
+    runs-on: ["self-hosted", "macOS", "ARM64", "chromium"]
+    permissions:
+      contents: read
     timeout-minutes: 720
     outputs:
       archive-name: ${{ steps.package.outputs.archive_name }}
       archive-sha256: ${{ steps.package.outputs.archive_sha256 }}
-      chromium-commit: ${{ steps.inputs.outputs.chromium_commit }}
+      source-repository: ${{ steps.inputs.outputs.source_repository }}
+      source-ref: ${{ steps.inputs.outputs.source_ref }}
+      source-commit: ${{ steps.inputs.outputs.source_commit }}
+      short-sha: ${{ steps.inputs.outputs.short_sha }}
+      release-tag: ${{ steps.inputs.outputs.release_tag }}
     steps:
-      - name: Check out artifact repo
-        uses: actions/checkout@v4
+      - name: Check out reviewed artifact repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
 
-      - name: Resolve build inputs
-        id: inputs
+      - name: Verify trusted dispatch ref
         shell: bash
+        env:
+          EXPECTED_REPOSITORY: manaflow-ai/chromium
+          EXPECTED_REF: refs/heads/main
+          EXPECTED_EVENT: workflow_dispatch
         run: |
           set -euo pipefail
-          chromium_commit="${{ inputs.chromium_commit }}"
-          if ! [[ "$chromium_commit" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "chromium_commit must be a full 40-character lowercase SHA" >&2
+          [[ "$GITHUB_REPOSITORY" == "$EXPECTED_REPOSITORY" ]]
+          [[ "$GITHUB_REF" == "$EXPECTED_REF" ]]
+          [[ "$GITHUB_EVENT_NAME" == "$EXPECTED_EVENT" ]]
+          checked_out_commit="$(git rev-parse HEAD)"
+          [[ "$checked_out_commit" == "$GITHUB_SHA" ]] || {
+            echo "artifact checkout $checked_out_commit does not match dispatch SHA $GITHUB_SHA" >&2
             exit 1
-          fi
-          gclient_cache_dir="${{ inputs.gclient_cache_dir }}"
-          if [ -n "$gclient_cache_dir" ] && [[ "$gclient_cache_dir" != /* ]]; then
-            echo "gclient_cache_dir must be an absolute path when set" >&2
-            exit 1
-          fi
+          }
 
-          build_root="$RUNNER_TEMP/owl-chromium-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          out_dir="out/owl-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          short_sha="${chromium_commit:0:12}"
+      - name: Resolve reviewed build policy
+        id: inputs
+        shell: bash
+        env:
+          POLICY_PATH: ${{ github.workspace }}/.github/chromium-release-policy.json
+        run: |
+          set -euo pipefail
+          test -r "$POLICY_PATH"
+          command -v python3 >/dev/null
+          python3 "$GITHUB_WORKSPACE/scripts/chromium_release_policy.py" \
+            --policy "$POLICY_PATH" \
+            --runner-json "$RUNNER_JSON" \
+            --runner-name "$RUNNER_NAME" \
+            --output "$GITHUB_OUTPUT"
 
-          echo "build_root=$build_root" >> "$GITHUB_OUTPUT"
-          echo "out_dir=$out_dir" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "chromium_commit=$chromium_commit" >> "$GITHUB_OUTPUT"
-          echo "gclient_cache_dir=$gclient_cache_dir" >> "$GITHUB_OUTPUT"
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          build_root="$(mktemp -d "$RUNNER_TEMP/owl-chromium.XXXXXX")"
+          chmod 700 "$build_root"
+          mkdir -m 700 "$build_root/home" "$build_root/gclient-cache"
+          out_dir="$build_root/out/owl-release"
+          {
+            echo "build_root=$build_root"
+            echo "home_dir=$build_root/home"
+            echo "gclient_cache_dir=$build_root/gclient-cache"
+            echo "out_dir=$out_dir"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify Xcode toolchain
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
         run: |
           set -euo pipefail
           xcodebuild -version
@@ -87,8 +106,8 @@ jobs:
           sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
           echo "macOS SDK: $sdk_path"
           test -f "$sdk_path/usr/include/DarwinFoundation1.modulemap"
-          metal_check_dir="$RUNNER_TEMP/owl-metal-check"
-          mkdir -p "$metal_check_dir"
+          metal_check_dir="$BUILD_ROOT/metal-check"
+          mkdir -m 700 "$metal_check_dir"
           cat > "$metal_check_dir/check.metal" <<'EOF'
           #include <metal_stdlib>
           using namespace metal;
@@ -97,27 +116,40 @@ jobs:
           xcrun metal -c "$metal_check_dir/check.metal" -o "$metal_check_dir/check.air" --std=macos-metal2.1 -mmacosx-version-min=10.14
           test -s "$metal_check_dir/check.air"
 
-      - name: Install depot_tools
+      - name: Install pinned depot_tools
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
+          DEPOT_TOOLS_REPOSITORY: ${{ steps.inputs.outputs.depot_tools_repository }}
+          DEPOT_TOOLS_COMMIT: ${{ steps.inputs.outputs.depot_tools_commit }}
         run: |
           set -euo pipefail
-          depot_tools="${{ steps.inputs.outputs.build_root }}/depot_tools"
-          mkdir -p "$(dirname "$depot_tools")"
-          git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$depot_tools"
+          depot_tools="$BUILD_ROOT/depot_tools"
+          git clone --no-checkout "$DEPOT_TOOLS_REPOSITORY" "$depot_tools"
+          git -C "$depot_tools" fetch --depth=1 origin "$DEPOT_TOOLS_COMMIT"
+          git -C "$depot_tools" checkout --detach "$DEPOT_TOOLS_COMMIT"
+          [[ "$(git -C "$depot_tools" rev-parse HEAD)" == "$DEPOT_TOOLS_COMMIT" ]]
+          [[ -z "$(git -C "$depot_tools" status --porcelain)" ]]
           "$depot_tools/ensure_bootstrap"
           test -f "$depot_tools/python3_bin_reldir.txt"
           echo "$depot_tools" >> "$GITHUB_PATH"
 
-      - name: Sync pinned Chromium fork
+      - name: Sync reviewed Chromium source
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
+          GCLIENT_CACHE_DIR: ${{ steps.inputs.outputs.gclient_cache_dir }}
+          SOURCE_REPOSITORY: ${{ steps.inputs.outputs.source_repository }}
+          SOURCE_REF: ${{ steps.inputs.outputs.source_ref }}
+          SOURCE_COMMIT: ${{ steps.inputs.outputs.source_commit }}
         run: |
           set -euo pipefail
-          build_root="${{ steps.inputs.outputs.build_root }}"
-          chromium_repo="${{ inputs.chromium_repo }}"
-          chromium_ref="${{ inputs.chromium_ref }}"
-          expected_commit="${{ steps.inputs.outputs.chromium_commit }}"
-          mkdir -p "$build_root/chromium"
-          cd "$build_root/chromium"
+          export GIT_TERMINAL_PROMPT=0
+          chromium_root="$BUILD_ROOT/chromium"
+          mkdir -m 700 "$chromium_root"
+          cd "$chromium_root"
 
           run_with_heartbeat() {
             "$@" &
@@ -131,38 +163,27 @@ jobs:
               done
             ) &
             local heartbeat=$!
-
-            local status=0
-            wait "$pid" || status=$?
+            local command_status=0
+            wait "$pid" || command_status=$?
             kill "$heartbeat" 2>/dev/null || true
             wait "$heartbeat" 2>/dev/null || true
-            return "$status"
+            return "$command_status"
           }
 
-          resolved_ref="$(git ls-remote "$chromium_repo" "$chromium_ref" | awk 'NR == 1 { print $1 }')"
-          if [ "$resolved_ref" != "$expected_commit" ]; then
-            echo "Source ref resolved to ${resolved_ref:-<missing>}, expected $expected_commit" >&2
+          resolved_ref="$(git ls-remote --exit-code "$SOURCE_REPOSITORY" "refs/heads/$SOURCE_REF" | awk 'NR == 1 { print $1 }')"
+          [[ "$resolved_ref" == "$SOURCE_COMMIT" ]] || {
+            echo "source ref resolved to ${resolved_ref:-<missing>}, expected $SOURCE_COMMIT" >&2
             exit 1
-          fi
+          }
 
-          gclient_cache_dir="${{ steps.inputs.outputs.gclient_cache_dir }}"
-          if [ -n "$gclient_cache_dir" ]; then
-            mkdir -p "$gclient_cache_dir"
-            gclient config --name=src --cache-dir "$gclient_cache_dir" "$chromium_repo"
-          else
-            gclient config --name=src "$chromium_repo"
-          fi
-
-          run_with_heartbeat gclient sync -D --no-history --force --revision "src@$expected_commit"
+          gclient config --name=src --cache-dir "$GCLIENT_CACHE_DIR" "$SOURCE_REPOSITORY"
+          run_with_heartbeat gclient sync -D --no-history --force --revision "src@$SOURCE_COMMIT"
           cd src
 
-          actual_commit="$(git rev-parse HEAD)"
-          if [ "$actual_commit" != "$expected_commit" ]; then
-            echo "Synced source checkout resolved to $actual_commit, expected $expected_commit" >&2
-            exit 1
-          fi
-
-          if [ -n "$(git status --porcelain)" ]; then
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]]
+          source_remote="$(git config --get remote.origin.url)"
+          [[ "$source_remote" == "$SOURCE_REPOSITORY" || "$source_remote" == "${SOURCE_REPOSITORY%.git}" ]]
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
             git status --short
             echo "Chromium source checkout is dirty after gclient sync" >&2
             exit 1
@@ -170,10 +191,13 @@ jobs:
 
       - name: Configure release build
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          OUT_DIR: ${{ steps.inputs.outputs.out_dir }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
         run: |
           set -euo pipefail
-          cd "${{ steps.inputs.outputs.build_root }}/chromium/src"
-          out_dir="${{ steps.inputs.outputs.out_dir }}"
+          cd "$BUILD_ROOT/chromium/src"
           gn_args='
             target_cpu = "arm64"
             is_debug = false
@@ -183,31 +207,34 @@ jobs:
             use_remoteexec = false
             treat_warnings_as_errors = false
           '
-          gn gen "$out_dir" --args="$gn_args"
-          printf "%s\n" "$gn_args" > "$out_dir/owl-build-args.gn"
+          gn gen "$OUT_DIR" --args="$gn_args"
+          printf "%s\n" "$gn_args" > "$OUT_DIR/owl-build-args.gn"
 
       - name: Build runtime targets
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          OUT_DIR: ${{ steps.inputs.outputs.out_dir }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
         run: |
           set -euo pipefail
-          cd "${{ steps.inputs.outputs.build_root }}/chromium/src"
-          out_dir="${{ steps.inputs.outputs.out_dir }}"
+          cd "$BUILD_ROOT/chromium/src"
           diagnostics_dir="$RUNNER_TEMP/owl-build-diagnostics-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          if ! autoninja -C "$out_dir" content_shell owl_fresh_mojo_runtime; then
-            mkdir -p "$diagnostics_dir"
+          if ! autoninja -C "$OUT_DIR" content_shell owl_fresh_mojo_runtime; then
+            mkdir -m 700 "$diagnostics_dir"
             for item in siso_output siso.INFO siso_failed_commands.sh; do
-              if [ -e "$out_dir/$item" ]; then
-                cp "$out_dir/$item" "$diagnostics_dir/"
+              if [ -e "$OUT_DIR/$item" ]; then
+                cp "$OUT_DIR/$item" "$diagnostics_dir/"
               fi
             done
-            if [ -e "$out_dir/siso_failed_commands.sh" ]; then
+            if [ -e "$OUT_DIR/siso_failed_commands.sh" ]; then
               echo "::group::siso_failed_commands.sh"
-              sed -n '1,200p' "$out_dir/siso_failed_commands.sh"
+              sed -n '1,200p' "$OUT_DIR/siso_failed_commands.sh"
               echo "::endgroup::"
             fi
-            if [ -e "$out_dir/siso_output" ]; then
+            if [ -e "$OUT_DIR/siso_output" ]; then
               echo "::group::siso_output tail"
-              tail -n 400 "$out_dir/siso_output"
+              tail -n 400 "$OUT_DIR/siso_output"
               echo "::endgroup::"
             fi
             exit 1
@@ -215,28 +242,33 @@ jobs:
 
       - name: Upload build diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: owl-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/owl-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Package runtime
+      - name: Package and validate runtime
         id: package
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
+          OUT_DIR: ${{ steps.inputs.outputs.out_dir }}
+          HOME: ${{ steps.inputs.outputs.home_dir }}
+          SOURCE_REPOSITORY: ${{ steps.inputs.outputs.source_repository }}
+          SOURCE_REF: ${{ steps.inputs.outputs.source_ref }}
+          SOURCE_COMMIT: ${{ steps.inputs.outputs.source_commit }}
+          SHORT_SHA: ${{ steps.inputs.outputs.short_sha }}
         run: |
           set -euo pipefail
-          chromium_src="${{ steps.inputs.outputs.build_root }}/chromium/src"
-          out_path="$chromium_src/${{ steps.inputs.outputs.out_dir }}"
-          short_sha="${{ steps.inputs.outputs.short_sha }}"
-          package_name="owl-chromium-runtime-macos-arm64-$short_sha"
+          out_path="$OUT_DIR"
+          package_name="owl-chromium-runtime-macos-arm64-$SHORT_SHA"
           staging="$RUNNER_TEMP/$package_name"
           archive="$RUNNER_TEMP/$package_name.tar.gz"
           sha_file="$archive.sha256"
-
-          rm -rf "$staging"
-          mkdir -p "$staging"
+          rm -rf -- "$staging" "$archive" "$sha_file"
+          mkdir -m 700 "$staging"
 
           for item in \
             "Content Shell.app" \
@@ -246,68 +278,231 @@ jobs:
             "libowl_fresh_mojo_runtime.dylib" \
             "owl-build-args.gn"; do
             if [ ! -e "$out_path/$item" ]; then
-              echo "Missing expected build output: $out_path/$item" >&2
+              echo "missing expected build output: $out_path/$item" >&2
               exit 1
             fi
             cp -R "$out_path/$item" "$staging/"
           done
 
-          cat > "$staging/owl-runtime-manifest.json" <<EOF
-          {
-            "chromiumSourceRepo": "${{ inputs.chromium_repo }}",
-            "chromiumSourceRef": "${{ inputs.chromium_ref }}",
-            "chromiumSourceCommit": "${{ steps.inputs.outputs.chromium_commit }}",
-            "artifactRepo": "${{ github.repository }}",
-            "artifactWorkflow": "${{ github.workflow }}",
-            "artifactRunId": "${{ github.run_id }}",
-            "artifactRunAttempt": "${{ github.run_attempt }}",
-            "runnerName": "${{ runner.name }}",
-            "runnerOS": "${{ runner.os }}",
-            "runnerArch": "${{ runner.arch }}",
-            "gnOutDir": "${{ steps.inputs.outputs.out_dir }}",
-            "ninjaTargets": ["content_shell", "owl_fresh_mojo_runtime"]
+          MANIFEST_PATH="$staging/owl-runtime-manifest.json" \
+          ARTIFACT_REPOSITORY="$GITHUB_REPOSITORY" \
+          ARTIFACT_WORKFLOW="$GITHUB_WORKFLOW" \
+          ARTIFACT_RUN_ID="$GITHUB_RUN_ID" \
+          ARTIFACT_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+          RUNNER_NAME="$RUNNER_NAME" \
+          RUNNER_OS="$RUNNER_OS" \
+          RUNNER_ARCH="$RUNNER_ARCH" \
+          GN_OUT_DIR="$OUT_DIR" \
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "chromiumSourceRepo": os.environ["SOURCE_REPOSITORY"],
+              "chromiumSourceRef": os.environ["SOURCE_REF"],
+              "chromiumSourceCommit": os.environ["SOURCE_COMMIT"],
+              "artifactRepo": os.environ["ARTIFACT_REPOSITORY"],
+              "artifactWorkflow": os.environ["ARTIFACT_WORKFLOW"],
+              "artifactRunId": os.environ["ARTIFACT_RUN_ID"],
+              "artifactRunAttempt": os.environ["ARTIFACT_RUN_ATTEMPT"],
+              "runnerName": os.environ["RUNNER_NAME"],
+              "runnerOS": os.environ["RUNNER_OS"],
+              "runnerArch": os.environ["RUNNER_ARCH"],
+              "gnOutDir": os.environ["GN_OUT_DIR"],
+              "ninjaTargets": ["content_shell", "owl_fresh_mojo_runtime"],
           }
-          EOF
+          Path(os.environ["MANIFEST_PATH"]).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          PY
 
+          archive_basename="$(basename "$archive")"
           (cd "$RUNNER_TEMP" && COPYFILE_DISABLE=1 tar -czf "$archive" "$package_name")
-          (cd "$(dirname "$archive")" && shasum -a 256 "$(basename "$archive")") | tee "$sha_file"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$archive_basename" > "$sha_file")
+          archive_sha256="$(awk 'NR == 1 { print $1 }' "$sha_file")"
+          [[ "$archive_sha256" =~ ^[0-9a-f]{64}$ ]]
 
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
-          echo "sha_file=$sha_file" >> "$GITHUB_OUTPUT"
-          echo "archive_name=$package_name.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "archive_sha256=$(awk '{print $1}' "$sha_file")" >> "$GITHUB_OUTPUT"
+          python3 "$GITHUB_WORKSPACE/scripts/validate_runtime_archive.py" \
+            --archive "$archive" \
+            --package-name "$package_name" \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-ref "$SOURCE_REF" \
+            --source-commit "$SOURCE_COMMIT" \
+            --artifact-repository "$GITHUB_REPOSITORY"
+          grep -Eq "^[0-9a-f]{64}[[:space:]]+$archive_basename$" "$sha_file"
 
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
+          {
+            echo "archive=$archive"
+            echo "sha_file=$sha_file"
+            echo "archive_name=$archive_basename"
+            echo "archive_sha256=$archive_sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload validated runtime artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.package.outputs.archive_name }}
           path: |
             ${{ steps.package.outputs.archive }}
             ${{ steps.package.outputs.sha_file }}
+          if-no-files-found: error
           retention-days: 90
-
-      - name: Publish release
-        if: ${{ inputs.publish_release }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag }}
-          name: OWL Chromium runtime ${{ steps.inputs.outputs.short_sha }}
-          body: |
-            OWL Chromium runtime build.
-
-            Source: `${{ inputs.chromium_repo }}`
-            Ref: `${{ inputs.chromium_ref }}`
-            Commit: `${{ steps.inputs.outputs.chromium_commit }}`
-            Archive SHA-256: `${{ steps.package.outputs.archive_sha256 }}`
-            Runner: `${{ runner.name }} (${{ runner.os }} ${{ runner.arch }})`
-          files: |
-            ${{ steps.package.outputs.archive }}
-            ${{ steps.package.outputs.sha_file }}
-          fail_on_unmatched_files: true
-          make_latest: false
 
       - name: Clean isolated build root
         if: ${{ always() }}
         shell: bash
+        env:
+          BUILD_ROOT: ${{ steps.inputs.outputs.build_root }}
         run: |
-          rm -rf "${{ steps.inputs.outputs.build_root }}"
+          set -euo pipefail
+          case "$BUILD_ROOT" in
+            "$RUNNER_TEMP"/owl-chromium.*)
+              if [ -d "$BUILD_ROOT" ]; then
+                rm -rf -- "$BUILD_ROOT"
+              fi
+              ;;
+            "")
+              ;;
+            *)
+              echo "refusing to clean an unexpected build root: $BUILD_ROOT" >&2
+              exit 1
+              ;;
+          esac
+
+  publish:
+    name: Publish reviewed runtime release
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'manaflow-ai/chromium' &&
+      inputs.publish_release == true
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: release
+    permissions:
+      actions: read # Download only the artifact produced by this run.
+      contents: write # Sole writer of tags and releases, after environment approval.
+    timeout-minutes: 20
+    steps:
+      - name: Check out release validators
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.build.outputs.archive-name }}
+          path: ${{ runner.temp }}/owl-runtime
+
+      - name: Verify artifact and checksum
+        shell: bash
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/owl-runtime
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive-name }}
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+          SOURCE_REPOSITORY: ${{ needs.build.outputs.source-repository }}
+          SOURCE_REF: ${{ needs.build.outputs.source-ref }}
+          SOURCE_COMMIT: ${{ needs.build.outputs.source-commit }}
+        run: |
+          set -euo pipefail
+          archive="$ARTIFACT_DIR/$ARCHIVE_NAME"
+          sha_file="$archive.sha256"
+          test -f "$archive"
+          test -f "$sha_file"
+          (cd "$ARTIFACT_DIR" && sha256sum -c "$(basename "$sha_file")")
+          actual_sha256="$(awk 'NR == 1 { print $1 }' "$sha_file")"
+          [[ "$actual_sha256" == "$ARCHIVE_SHA256" ]]
+          package_name="${ARCHIVE_NAME%.tar.gz}"
+          python3 "$GITHUB_WORKSPACE/scripts/validate_runtime_archive.py" \
+            --archive "$archive" \
+            --package-name "$package_name" \
+            --source-repository "$SOURCE_REPOSITORY" \
+            --source-ref "$SOURCE_REF" \
+            --source-commit "$SOURCE_COMMIT" \
+            --artifact-repository "$GITHUB_REPOSITORY"
+
+      - name: Publish immutable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE_DIR: ${{ runner.temp }}/owl-runtime
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive-name }}
+          ARCHIVE_SHA256: ${{ needs.build.outputs.archive-sha256 }}
+          SOURCE_REPOSITORY: ${{ needs.build.outputs.source-repository }}
+          SOURCE_REF: ${{ needs.build.outputs.source-ref }}
+          SOURCE_COMMIT: ${{ needs.build.outputs.source-commit }}
+          RELEASE_TAG: ${{ needs.build.outputs.release-tag }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          archive="$ARCHIVE_DIR/$ARCHIVE_NAME"
+          sha_file="$archive.sha256"
+          [[ "$repo" == "manaflow-ai/chromium" ]]
+          [[ "$RELEASE_TAG" == "owl-chromium-$SOURCE_COMMIT" ]]
+          [[ "$RELEASE_TAG" =~ ^owl-chromium-[0-9a-f]{40}$ ]]
+          [[ "$ARCHIVE_NAME" == "owl-chromium-runtime-macos-arm64-${SOURCE_COMMIT:0:12}.tar.gz" ]]
+
+          ref_json=""
+          if ref_json="$(gh api "repos/$repo/git/ref/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            ref_type="$(jq -r '.object.type' <<<"$ref_json")"
+            ref_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            [[ "$ref_type" == "commit" && "$ref_sha" == "$GITHUB_SHA" ]] || {
+              echo "release tag already points to a different object" >&2
+              exit 1
+            }
+          else
+            if ! gh api --method POST "repos/$repo/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" \
+              -f "sha=$GITHUB_SHA" >/dev/null; then
+              ref_json="$(gh api "repos/$repo/git/ref/tags/$RELEASE_TAG")"
+              [[ "$(jq -r '.object.type' <<<"$ref_json")" == "commit" ]]
+              [[ "$(jq -r '.object.sha' <<<"$ref_json")" == "$GITHUB_SHA" ]]
+            fi
+          fi
+
+          notes_file="$RUNNER_TEMP/owl-runtime-release-notes.md"
+          cat > "$notes_file" <<EOF
+          OWL Chromium runtime build.
+
+          Source: $SOURCE_REPOSITORY
+          Ref: $SOURCE_REF
+          Commit: $SOURCE_COMMIT
+          Archive SHA-256: $ARCHIVE_SHA256
+          Artifact workflow run: $GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)
+          EOF
+
+          release_json=""
+          if release_json="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            draft="$(jq -r '.draft' <<<"$release_json")"
+            for asset in "$archive" "$sha_file"; do
+              asset_name="$(basename "$asset")"
+              expected_digest="sha256:$(sha256sum "$asset" | awk '{ print $1 }')"
+              existing_count="$(jq -r --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")"
+              existing_digest="$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest // ""' <<<"$release_json" | head -n 1)"
+              if [ "$existing_count" -gt 0 ]; then
+                [[ "$existing_digest" == "$expected_digest" ]] || {
+                  echo "release asset $asset_name has a conflicting digest" >&2
+                  exit 1
+                }
+              elif [ "$draft" == true ]; then
+                gh release upload "$RELEASE_TAG" "$asset" --repo "$repo"
+              else
+                echo "published release is missing asset $asset_name" >&2
+                exit 1
+              fi
+            done
+            if [ "$draft" == true ]; then
+              gh release edit "$RELEASE_TAG" --repo "$repo" --draft=false --latest=false
+            fi
+          else
+            gh release create "$RELEASE_TAG" "$archive" "$sha_file" \
+              --repo "$repo" \
+              --verify-tag \
+              --title "OWL Chromium runtime ${SOURCE_COMMIT:0:12}" \
+              --notes-file "$notes_file" \
+              --latest=false
+          fi
