@@ -53,6 +53,7 @@ def _write_archive(
     executable_mode: int = 0o755,
     omit_executable: str | None = None,
     executable_body: bytes = b"executable",
+    runtime_library_body: bytes = b"runtime",
 ) -> None:
     with tarfile.open(path, "w:gz") as archive:
         root = tarfile.TarInfo(f"{PACKAGE_NAME}/")
@@ -78,7 +79,7 @@ def _write_archive(
             item.size = len(body)
             archive.addfile(item, io.BytesIO(body))
         for name, body in (
-            ("libowl_fresh_mojo_runtime.dylib", b"runtime"),
+            ("libowl_fresh_mojo_runtime.dylib", runtime_library_body),
             ("owl-build-args.gn", b'target_cpu = "arm64"\n'),
             (
                 "owl-runtime-manifest.json",
@@ -233,6 +234,13 @@ class RuntimeArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime.tar.gz"
             _write_archive(path, executable_body=b"")
+            with self.assertRaises(validator.ArchiveError):
+                self._validate(path)
+
+    def test_rejects_empty_runtime_library(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.tar.gz"
+            _write_archive(path, runtime_library_body=b"")
             with self.assertRaises(validator.ArchiveError):
                 self._validate(path)
 

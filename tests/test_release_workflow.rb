@@ -10,6 +10,13 @@ validation_workflow_path = File.expand_path(
 )
 validation_workflow = YAML.load_file(validation_workflow_path)
 
+validation_trigger = validation_workflow.fetch(true)
+%w[pull_request push].each do |event|
+  paths = validation_trigger.fetch(event).fetch("paths")
+  abort "#{event} validation must include the Python tool lock" unless
+    paths.include?(".github/python-tools.txt")
+end
+
 trigger = workflow.fetch(true)
 dispatch = trigger.fetch("workflow_dispatch")
 dispatch_inputs = dispatch.fetch("inputs")
