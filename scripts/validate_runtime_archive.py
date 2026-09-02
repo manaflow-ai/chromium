@@ -21,6 +21,15 @@ REQUIRED_ROOT_ENTRIES = frozenset(
         "owl-runtime-manifest.json",
     }
 )
+REQUIRED_ROOT_DIRECTORIES = frozenset(
+    {
+        "Content Shell.app",
+        "Content Shell Helper.app",
+        "Content Shell Helper (GPU).app",
+        "Content Shell Helper (Renderer).app",
+    }
+)
+REQUIRED_ROOT_FILES = REQUIRED_ROOT_ENTRIES - REQUIRED_ROOT_DIRECTORIES
 EXPECTED_TARGETS = ["content_shell", "owl_fresh_mojo_runtime"]
 
 
@@ -81,7 +90,16 @@ def _scan_members(
         if len(path.parts) == 1 and not member.isdir():
             raise ArchiveError("package root must be a directory")
         if len(path.parts) == 2:
-            root_entries.add(path.parts[1])
+            root_entry = path.parts[1]
+            root_entries.add(root_entry)
+            if root_entry in REQUIRED_ROOT_DIRECTORIES and not member.isdir():
+                raise ArchiveError(
+                    f"runtime root entry must be a directory: {member.name!r}"
+                )
+            if root_entry in REQUIRED_ROOT_FILES and not member.isreg():
+                raise ArchiveError(
+                    f"runtime root entry must be a regular file: {member.name!r}"
+                )
         if member.issym() or member.islnk():
             _safe_link_target(member, path, package_name)
         if path == PurePosixPath(package_name, "owl-runtime-manifest.json"):

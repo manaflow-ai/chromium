@@ -42,20 +42,10 @@ jobs:
       - name: Check out reviewed artifact repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.sha }}
+          ref: refs/heads/main
           fetch-depth: 1
           persist-credentials: false
           clean: true
-
-      - name: Verify release validators
-        shell: bash
-        run: |
-          set -euo pipefail
-          checked_out_commit="$(git rev-parse HEAD)"
-          [[ "$checked_out_commit" == "$GITHUB_SHA" ]] || {
-            echo "release validators $checked_out_commit do not match dispatch SHA $GITHUB_SHA" >&2
-            exit 1
-          }
 
       - name: Verify trusted dispatch ref
         shell: bash
@@ -233,7 +223,7 @@ jobs:
             mkdir -m 700 "$diagnostics_dir"
             for item in siso_output siso.INFO siso_failed_commands.sh; do
               if [ -e "$OUT_DIR/$item" ]; then
-                cp "$OUT_DIR/$item" "$diagnostics_dir/"
+                cp -P "$OUT_DIR/$item" "$diagnostics_dir/"
               fi
             done
             if [ -e "$OUT_DIR/siso_failed_commands.sh" ]; then
@@ -290,7 +280,7 @@ jobs:
               echo "missing expected build output: $out_path/$item" >&2
               exit 1
             fi
-            cp -R "$out_path/$item" "$staging/"
+            cp -RP "$out_path/$item" "$staging/"
           done
 
           MANIFEST_PATH="$staging/owl-runtime-manifest.json" \
@@ -396,10 +386,20 @@ jobs:
       - name: Check out release validators
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: refs/heads/main
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
           clean: true
+
+      - name: Verify release validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out_commit="$(git rev-parse HEAD)"
+          [[ "$checked_out_commit" == "$GITHUB_SHA" ]] || {
+            echo "release validators $checked_out_commit do not match dispatch SHA $GITHUB_SHA" >&2
+            exit 1
+          }
 
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
